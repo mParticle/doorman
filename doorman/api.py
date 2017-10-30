@@ -38,7 +38,7 @@ def node_required(f):
                 "%s - Request did not contain valid JSON data. This could "
                 "be an attempt to gather information about this endpoint "
                 "or an automated scanner.",
-                request.remote_addr
+                request.headers['X-Real-IP']
             )
             # Return nothing
             return ""
@@ -50,20 +50,20 @@ def node_required(f):
         if not node:
             current_app.logger.error(
                 "%s - Could not find node with node_key %s",
-                request.remote_addr, node_key
+                request.headers['X-Real-IP'], node_key
             )
             return jsonify(node_invalid=True)
 
         if not node.is_active:
             current_app.logger.error(
                 "%s - Node %s came back from the dead!",
-                request.remote_addr, node_key
+                request.headers['X-Real-IP'], node_key
             )
             return jsonify(node_invalid=True)
 
         node.update(
             last_checkin=dt.datetime.utcnow(),
-            last_ip=request.remote_addr,
+            last_ip=request.headers['X-Real-IP'],
             commit=False
         )
 
@@ -91,7 +91,7 @@ def enroll():
             "%s - Request did not contain valid JSON data. This could "
             "be an attempt to gather information about this endpoint "
             "or an automated scanner.",
-            request.remote_addr
+            request.headers['X-Real-IP']
         )
         # Return nothing
         return ""
@@ -102,7 +102,7 @@ def enroll():
     if not enroll_secret:
         current_app.logger.error(
             "%s - No enroll_secret provided by remote host",
-            request.remote_addr
+            request.headers['X-Real-IP']
         )
         return jsonify(node_invalid=True)
 
@@ -120,7 +120,7 @@ def enroll():
 
     if not node and enroll_secret not in current_app.config['DOORMAN_ENROLL_SECRET']:
         current_app.logger.error("%s - Invalid enroll_secret %s",
-            request.remote_addr, enroll_secret
+            request.headers['X-Real-IP'], enroll_secret
         )
         return jsonify(node_invalid=True)
 
@@ -129,19 +129,19 @@ def enroll():
     if node and node.enrolled_on:
         current_app.logger.warn(
             "%s - %s already enrolled on %s, returning existing node_key",
-            request.remote_addr, node, node.enrolled_on
+            request.headers['X-Real-IP'], node, node.enrolled_on
         )
 
         if node.host_identifier != host_identifier:
             current_app.logger.info(
                 "%s - %s changed their host_identifier to %s",
-                request.remote_addr, node, host_identifier
+                request.headers['X-Real-IP'], node, host_identifier
             )
             node.host_identifier = host_identifier
 
         node.update(
             last_checkin=dt.datetime.utcnow(),
-            last_ip=request.remote_addr
+            last_ip=request.headers['X-Real-IP']
         )
 
         return jsonify(node_key=node.node_key, node_invalid=False)
@@ -155,18 +155,18 @@ def enroll():
     if existing_node and not existing_node.enroll_secret:
         current_app.logger.warning(
             "%s - Duplicate host_identifier %s, already enrolled %s",
-            request.remote_addr, host_identifier, existing_node.enrolled_on
+            request.headers['X-Real-IP'], host_identifier, existing_node.enrolled_on
         )
 
         if current_app.config['DOORMAN_EXPECTS_UNIQUE_HOST_ID'] is True:
             current_app.logger.info(
                 "%s - Unique host identification is true, %s already enrolled "
                 "returning existing node key %s",
-                request.remote_addr, host_identifier, existing_node.node_key
+                request.headers['X-Real-IP'], host_identifier, existing_node.node_key
             )
             existing_node.update(
                 last_checkin=dt.datetime.utcnow(),
-                last_ip=request.remote_addr
+                last_ip=request.headers['X-Real-IP']
             )
             return jsonify(node_key=existing_node.node_key, node_invalid=False)
 
@@ -176,12 +176,12 @@ def enroll():
         node.update(host_identifier=host_identifier,
                     last_checkin=now,
                     enrolled_on=now,
-                    last_ip=request.remote_addr)
+                    last_ip=request.headers['X-Real-IP'])
     else:
         node = Node(host_identifier=host_identifier,
                     last_checkin=now,
                     enrolled_on=now,
-                    last_ip=request.remote_addr)
+                    last_ip=request.headers['X-Real-IP'])
 
         enroll_tags.update(current_app.config.get('DOORMAN_ENROLL_DEFAULT_TAGS', []))
 
@@ -195,7 +195,7 @@ def enroll():
         node.save()
 
     current_app.logger.info("%s - Enrolled new node %s",
-        request.remote_addr, node
+        request.headers['X-Real-IP'], node
     )
 
     notify_of_node_enrollment.delay(node.to_dict())
@@ -214,7 +214,7 @@ def configuration(node=None):
     '''
     current_app.logger.info(
         "%s - %s checking in to retrieve a new configuration",
-        request.remote_addr, node
+        request.headers['X-Real-IP'], node
     )
     config = node.get_config()
 
@@ -258,7 +258,7 @@ def logger(node=None):
 
     else:
         current_app.logger.error("%s - Unknown log_type %r",
-            request.remote_addr, log_type
+            request.headers['X-Real-IP'], log_type
         )
         current_app.logger.info(json.dumps(data))
         # still need to write last_checkin, last_ip
@@ -278,7 +278,7 @@ def distributed_read(node=None):
 
     current_app.logger.info(
         "%s - %s checking in to retrieve distributed queries",
-        request.remote_addr, node
+        request.headers['X-Real-IP'], node
     )
 
     queries = node.get_new_queries()
@@ -316,7 +316,7 @@ def distributed_write(node=None):
             current_app.logger.error(
                 "%s - Got result for distributed query not in PENDING "
                 "state: %s: %s",
-                request.remote_addr, guid, json.dumps(data)
+                request.headers['X-Real-IP'], guid, json.dumps(data)
             )
             continue
 
@@ -327,7 +327,7 @@ def distributed_write(node=None):
         else:
             current_app.logger.error(
                 "%s - Got non-zero status code (%d) on distributed query %s",
-                request.remote_addr, statuses.get(guid), guid
+                request.headers['X-Real-IP'], statuses.get(guid), guid
             )
             status = DistributedQueryTask.FAILED
 
